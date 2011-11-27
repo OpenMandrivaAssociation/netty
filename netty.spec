@@ -1,7 +1,7 @@
 
 Name:           netty
 Version:        3.2.3
-Release:        3
+Release:        5
 Summary:        An asynchronous event-driven network application framework and tools for Java
 
 Group:          Development/Java
