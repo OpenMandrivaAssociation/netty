@@ -1,48 +1,39 @@
-
+%{?_javapackages_macros:%_javapackages_macros}
 Name:           netty
-Version:        3.2.3
-Release:        5
+Version:        3.6.6
+Release:        2.0%{?dist}
 Summary:        An asynchronous event-driven network application framework and tools for Java
 
-Group:          Development/Java
+
 License:        ASL 2.0
-URL:            http://www.jboss.org/netty
-Source0:        http://sourceforge.net/projects/jboss/files/%{name}-%{version}.Final-dist.tar.bz2
+URL:            https://netty.io/
+Source0:        http://%{name}.googlecode.com/files/%{name}-%{version}.Final-dist.tar.bz2
+Patch0:         %{name}-port-to-jzlib-1.1.0.patch
 
-Patch0:         0001-Remove-parent-and-fix-javadoc-plugin-config.patch
-Patch1:         0002-Remove-optional-deps.patch
-Patch2:         0003-Replace-jboss-logger-with-jdk-logger.patch
+BuildArch:      noarch
 
-BuildArch:     noarch
-
-# This pulls in all of the required java and maven stuff
-BuildRequires:  maven
+BuildRequires:  maven-local
 BuildRequires:  maven-antrun-plugin
 BuildRequires:  maven-assembly-plugin
 BuildRequires:  maven-compiler-plugin
-BuildRequires:  maven-eclipse-plugin
+BuildRequires:  maven-enforcer-plugin
 BuildRequires:  maven-javadoc-plugin
+BuildRequires:  maven-plugin-bundle
 BuildRequires:  maven-resources-plugin
-BuildRequires:  maven-release-plugin
 BuildRequires:  maven-source-plugin
 BuildRequires:  maven-surefire-plugin
-BuildRequires:  maven-plugin-bundle
-BuildRequires:  buildnumber-maven-plugin
 BuildRequires:  ant-contrib
-BuildRequires:  subversion
-BuildRequires:  protobuf-java
+
 BuildRequires:  felix-osgi-compendium
-
-
-Requires:       java
-Requires:       protobuf-java
-Requires(post): jpackage-utils
-Requires(postun): jpackage-utils
-
+BuildRequires:  felix-osgi-core
+BuildRequires:  jboss-logging
+BuildRequires:  jboss-marshalling
+BuildRequires:  protobuf-java
+BuildRequires:  slf4j
+BuildRequires:  sonatype-oss-parent
+BuildRequires:  tomcat-servlet-3.0-api
 
 %description
-
-
 Netty is a NIO client server framework which enables quick and easy
 development of network applications such as protocol servers and
 clients. It greatly simplifies and streamlines network programming
@@ -59,70 +50,152 @@ flexibility without a compromise.
 
 %package javadoc
 Summary:   API documentation for %{name}
-Group:     Development/Java
-Requires:  jpackage-utils
+
 
 %description javadoc
 %{summary}.
 
 %prep
 %setup -q -n %{name}-%{version}.Final
-
 # just to be sure, but not used anyway
-rm -rf jar/
+rm -rf jar doc license
 
+%pom_remove_plugin :maven-jxr-plugin
+%pom_remove_plugin :maven-checkstyle-plugin
+%pom_remove_plugin org.eclipse.m2e:lifecycle-mapping
+%pom_remove_dep javax.activation:activation
+%pom_remove_plugin :animal-sniffer-maven-plugin
+%pom_xpath_remove "pom:execution[pom:id[text()='remove-examples']]"
+%pom_xpath_remove "pom:plugin[pom:artifactId[text()='maven-javadoc-plugin']]/pom:configuration"
+# Set scope of optional compile dependencies to 'provided'
+%pom_xpath_set "pom:dependency[pom:scope[text()='compile']
+	       and pom:optional[text()='true']]/pom:scope" provided
 
+sed s/jboss-logging-spi/jboss-logging/ -i pom.xml
+
+# Remove bundled jzlib and use system jzlib
+rm -rf src/main/java/org/jboss/netty/util/internal/jzlib
+%pom_add_dep com.jcraft:jzlib
+sed -i s/org.jboss.netty.util.internal.jzlib/com.jcraft.jzlib/ \
+    $(find src/main/java/org/jboss/netty/handler/codec -name \*.java | sort -u)
 %patch0 -p1
-%patch1 -p1
-
-# we don't have jboss logging facilites so we replace it with jdk logger
-rm src/main/java/org/jboss/netty/logging/JBossLogger*.java
-%patch2 -p1
 
 %build
-export MAVEN_REPO_LOCAL=$(pwd)/.m2/repository
-mkdir -p $MAVEN_REPO_LOCAL
-
-# skipping tests because we don't have all dependencies in Fedora
-mvn-local \
-        -Dmaven.repo.local=$MAVEN_REPO_LOCAL \
-        -Dmaven.test.skip=true \
-        install javadoc:javadoc
-
+%mvn_alias : org.jboss.netty:
+%mvn_file  : %{name}
+# skipping tests because we don't have easymockclassextension
+%mvn_build -f
 
 %install
-install -d -m 755 $RPM_BUILD_ROOT%{_javadir}
+%mvn_install
 
-install -m 644 target/%{name}-%{version}.Final.jar \
-  $RPM_BUILD_ROOT%{_javadir}/%{name}.jar
-
-
-install -d -m 755 $RPM_BUILD_ROOT%{_javadocdir}/%{name}
-cp -pr target/site/apidocs/* $RPM_BUILD_ROOT%{_javadocdir}/%{name}
-
-install -d -m 755 $RPM_BUILD_ROOT%{_mavenpomdir}
-install -pm 644 pom.xml $RPM_BUILD_ROOT/%{_mavenpomdir}/JPP-%{name}.pom
-
-%add_to_maven_depmap org.jboss.netty netty %{version} JPP %{name}
-
-%post
-%update_maven_depmap
-
-%postun
-%update_maven_depmap
-
-
-%files
-%defattr(-,root,root,-)
+%files -f .mfiles
 %doc LICENSE.txt NOTICE.txt
-%{_javadir}/*.jar
-%{_mavendepmapfragdir}/%{name}
-%{_mavenpomdir}/JPP-%{name}.pom
 
-%files javadoc
-%defattr(-,root,root,-)
+%files javadoc -f .mfiles-javadoc
 %doc LICENSE.txt NOTICE.txt
-%{_javadocdir}/%{name}
 
+%changelog
+* Sat Aug 03 2013 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 3.6.6-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_20_Mass_Rebuild
 
+* Thu May 16 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.6.6-1
+- Update to upstream version 3.6.6
 
+* Wed Apr 10 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.6.5-1
+- Update to upstream version 3.6.5
+
+* Mon Apr  8 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.6.4-1
+- Update to upstream version 3.6.4
+
+* Wed Feb 27 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.6.3-3
+- Set scope of optional compile dependencies to 'provided'
+
+* Wed Feb 27 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.6.3-2
+- Drop dependency on OSGi
+- Resolves: rhbz#916139
+
+* Mon Feb 25 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.6.3-1
+- Update to upstream version 3.6.3
+
+* Thu Feb 14 2013 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 3.6.2-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_19_Mass_Rebuild
+
+* Wed Feb 06 2013 Java SIG <java-devel@lists.fedoraproject.org> - 3.6.2-2
+- Update for https://fedoraproject.org/wiki/Fedora_19_Maven_Rebuild
+- Replace maven BuildRequires with maven-local
+
+* Wed Jan 16 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.6.2-1
+- Update to upstream version 3.6.2
+
+* Tue Jan 15 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.6.1-1
+- Update to upstream version 3.6.1
+
+* Thu Dec 13 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.11-2
+- Use system jzlib instead of bundled jzlib
+- Resolves: rhbz#878391
+
+* Mon Dec  3 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.11-1
+- Update to upstream version 3.5.11
+
+* Mon Nov 12 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.10-1
+- Update to upstream version 3.5.10
+
+* Thu Oct 25 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.9-1
+- Update to upstream version 3.5.9
+
+* Fri Oct  5 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.8-1
+- Update to upstream version 3.5.8
+
+* Fri Sep  7 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.7-1
+- Update to upstream version 3.5.7
+
+* Mon Sep  3 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.6-1
+- Update to upstream version 3.5.6
+
+* Thu Aug 23 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.5-1
+- Update to upstream version 3.5.5
+
+* Thu Aug 15 2012 Tomas Rohovsky <trohovsk@redhat.com> - 3.5.4-1
+- Update to upstream version 3.5.4
+
+* Tue Jul 24 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.3-1
+- Update to upstream version 3.5.3
+
+* Fri Jul 20 2012 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 3.5.2-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_18_Mass_Rebuild
+
+* Mon Jul 16 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.2-2
+- Add additional depmap for org.jboss.netty:netty
+- Fixes #840301
+
+* Thu Jul 12 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.2-1
+- Update to upstream version 3.5.2
+- Convert patches to POM macros
+- Enable jboss-logging
+
+* Fri May 18 2012 Stanislav Ochotnicky <sochotnicky@redhat.com> - 3.2.4-4
+- Add enforcer-plugin to BR
+
+* Wed Apr 18 2012 Stanislav Ochotnicky <sochotnicky@redhat.com> - 3.2.4-3
+- Remove eclipse plugin from BuildRequires
+
+* Fri Jan 13 2012 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 3.2.4-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_17_Mass_Rebuild
+
+* Mon Dec  5 2011 Stanislav Ochotnicky <sochotnicky@redhat.com> - 3.2.4-1
+- Update to latest upstream version
+
+* Mon Jul 4 2011 Alexander Kurtakov <akurtako@redhat.com> 3.2.3-4
+- Fix FTBFS.
+- Adapt to current guidelines.
+
+* Tue Feb 08 2011 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 3.2.3-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_15_Mass_Rebuild
+
+* Mon Jan 17 2011 Stanislav Ochotnicky <sochotnicky@redhat.com> - 3.2.3-2
+- Use maven 3 to build
+- Drop ant-contrib depmap (no longer needed)
+
+* Thu Jan 13 2011 Stanislav Ochotnicky <sochotnicky@redhat.com> - 3.2.3-1
+- Initial version of the package
