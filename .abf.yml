@@ -1,2 +1,4 @@
+removed_sources:
+  netty-4.0.42.Final.tar.gz: 3a163943fa01e4d12ad9320afbee349ddc653f00
 sources:
-  netty-4.0.19.Final.tar.gz: e4e02e02738c04941f26437fbe5a6bfaaadfeb9c
+  netty-4.1.13.Final.tar.gz: cc2ea9b68483fb52b413ca66d0f4c73713585163

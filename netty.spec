@@ -1,50 +1,57 @@
 %{?_javapackages_macros:%_javapackages_macros}
+
+# Disable generation of debuginfo package
+%global debug_package %{nil}
 %global namedreltag .Final
 %global namedversion %{version}%{?namedreltag}
-%define debug_package %{nil}
+
+%bcond_with     jp_minimal
 
 Name:           netty
-Version:        4.0.19
-Release:        2.2
+Version:        4.1.13
+Release:        1.1
 Summary:        An asynchronous event-driven network application framework and tools for Java
 Group:          Development/Java
 License:        ASL 2.0
 URL:            https://netty.io/
 Source0:        https://github.com/netty/netty/archive/netty-%{namedversion}.tar.gz
+# Upsteam uses a simple template generator script written in groovy and run with gmaven
+# We don't have the plugin and want to avoid groovy dependency
+# This script is written in bash+sed and performs the same task
+Source1:        codegen.bash
+Patch0:         0001-Remove-OpenSSL-parts-depending-on-tcnative.patch
+Patch1:         0002-Remove-NPN.patch
+Patch2:         0003-Remove-conscrypt-ALPN.patch
 
 BuildRequires:  maven-local
 BuildRequires:  mvn(ant-contrib:ant-contrib)
-BuildRequires:  mvn(ch.qos.logback:logback-classic)
-BuildRequires:  mvn(com.google.protobuf:protobuf-java)
 BuildRequires:  mvn(com.jcraft:jzlib)
 BuildRequires:  mvn(commons-logging:commons-logging)
-BuildRequires:  mvn(junit:junit)
-BuildRequires:  mvn(log4j:log4j)
+BuildRequires:  mvn(kr.motd.maven:os-maven-plugin)
+BuildRequires:  mvn(log4j:log4j:1.2.17)
 BuildRequires:  mvn(org.apache.felix:maven-bundle-plugin)
+BuildRequires:  mvn(org.apache.logging.log4j:log4j-api)
 BuildRequires:  mvn(org.apache.maven.plugins:maven-antrun-plugin)
-BuildRequires:  mvn(org.apache.maven.plugins:maven-checkstyle-plugin)
-BuildRequires:  mvn(org.apache.maven.plugins:maven-clean-plugin)
 BuildRequires:  mvn(org.apache.maven.plugins:maven-dependency-plugin)
-BuildRequires:  mvn(org.apache.maven.plugins:maven-deploy-plugin)
-BuildRequires:  mvn(org.apache.maven.plugins:maven-jxr-plugin)
-BuildRequires:  mvn(org.apache.maven.plugins:maven-release-plugin)
-BuildRequires:  mvn(org.apache.maven.plugins:maven-source-plugin)
-BuildRequires:  mvn(org.apache.maven.scm:maven-scm-api)
-BuildRequires:  mvn(org.apache.maven.scm:maven-scm-provider-gitexe)
+BuildRequires:  mvn(org.apache.maven.plugins:maven-remote-resources-plugin)
 BuildRequires:  mvn(org.codehaus.mojo:build-helper-maven-plugin)
-BuildRequires:  mvn(org.easymock:easymock)
-BuildRequires:  mvn(org.easymock:easymockclassextension)
+BuildRequires:  mvn(org.codehaus.mojo:exec-maven-plugin)
+BuildRequires:  mvn(org.eclipse.jetty.alpn:alpn-api)
 BuildRequires:  mvn(org.fusesource.hawtjni:maven-hawtjni-plugin)
 BuildRequires:  mvn(org.javassist:javassist)
-BuildRequires:  mvn(org.jboss.marshalling:jboss-marshalling)
-BuildRequires:  mvn(org.jboss.marshalling:jboss-marshalling-river)
-BuildRequires:  mvn(org.jboss.marshalling:jboss-marshalling-serial)
-BuildRequires:  mvn(org.jmock:jmock-junit4)
+BuildRequires:  mvn(org.jctools:jctools-core)
 BuildRequires:  mvn(org.slf4j:slf4j-api)
 BuildRequires:  mvn(org.sonatype.oss:oss-parent:pom:)
-
-Provides:       netty4 = %{version}-%{release}
-Obsoletes:      netty4 < %{version}-%{release}
+%if %{without jp_minimal}
+BuildRequires:  mvn(com.fasterxml:aalto-xml)
+BuildRequires:  mvn(com.github.jponge:lzma-java)
+BuildRequires:  mvn(com.google.protobuf.nano:protobuf-javanano)
+BuildRequires:  mvn(com.google.protobuf:protobuf-java)
+BuildRequires:  mvn(com.ning:compress-lzf)
+BuildRequires:  mvn(net.jpountz.lz4:lz4)
+BuildRequires:  mvn(org.bouncycastle:bcpkix-jdk15on)
+BuildRequires:  mvn(org.jboss.marshalling:jboss-marshalling)
+%endif
 
 %description
 Netty is a NIO client server framework which enables quick and easy
@@ -69,6 +76,10 @@ Summary:   API documentation for %{name}
 %prep
 %setup -q -n netty-netty-%{namedversion}
 
+%patch0 -p1
+%patch1 -p1
+%patch2 -p1
+
 # Missing Mavenized rxtx
 %pom_disable_module "transport-rxtx"
 %pom_remove_dep ":netty-transport-rxtx" all
@@ -80,24 +91,92 @@ Summary:   API documentation for %{name}
 %pom_disable_module "example"
 %pom_remove_dep ":netty-example" all
 %pom_disable_module "testsuite"
+%pom_disable_module "testsuite-autobahn"
+%pom_disable_module "testsuite-osgi"
 %pom_disable_module "tarball"
 %pom_disable_module "microbench"
-%pom_remove_plugin :maven-checkstyle-plugin
-%pom_remove_plugin :animal-sniffer-maven-plugin
-%pom_remove_plugin :maven-enforcer-plugin
+
+%pom_xpath_inject 'pom:plugin[pom:artifactId="maven-remote-resources-plugin"]' '
+<dependencies>
+<dependency>
+<groupId>io.netty</groupId>
+<artifactId>netty-dev-tools</artifactId>
+<version>${project.version}</version>
+</dependency>
+</dependencies>'
+
 %pom_remove_plugin :maven-antrun-plugin
+# get-jetty-alpn-agent
+%pom_remove_plugin :maven-dependency-plugin
+# style checker
+%pom_remove_plugin :xml-maven-plugin
+%pom_remove_plugin -r :maven-checkstyle-plugin
+%pom_remove_plugin -r :animal-sniffer-maven-plugin
+%pom_remove_plugin -r :maven-enforcer-plugin
+%pom_remove_plugin -r :maven-shade-plugin
+%pom_remove_plugin -r :maven-release-plugin
+%pom_remove_plugin -r :maven-clean-plugin
+%pom_remove_plugin -r :maven-source-plugin
+%pom_remove_plugin -r :maven-deploy-plugin
+%pom_remove_plugin -r :maven-jxr-plugin
+%pom_remove_plugin -r :maven-javadoc-plugin
+%pom_remove_plugin -r :forbiddenapis
+
+cp %{SOURCE1} common/codegen.bash
+%pom_add_plugin org.codehaus.mojo:exec-maven-plugin common '
+<executions>
+    <execution>
+        <id>generate-collections</id>
+        <phase>generate-sources</phase>
+        <goals>
+            <goal>exec</goal>
+        </goals>
+        <configuration>
+            <executable>common/codegen.bash</executable>
+        </configuration>
+    </execution>
+</executions>
+'
+%pom_remove_plugin :groovy-maven-plugin common
+
+%if %{with jp_minimal}
+%pom_remove_dep -r "com.google.protobuf:protobuf-java"
+%pom_remove_dep -r "com.google.protobuf.nano:protobuf-javanano"
+rm codec/src/main/java/io/netty/handler/codec/protobuf/*
+sed -i '/import.*protobuf/d' codec/src/main/java/io/netty/handler/codec/DatagramPacket*.java
+%pom_remove_dep -r "org.jboss.marshalling:jboss-marshalling"
+rm codec/src/main/java/io/netty/handler/codec/marshalling/*
+%pom_remove_dep -r org.bouncycastle
+rm handler/src/main/java/io/netty/handler/ssl/util/BouncyCastleSelfSignedCertGenerator.java
+sed -i '/BouncyCastleSelfSignedCertGenerator/s/.*/throw new UnsupportedOperationException();/' \
+    handler/src/main/java/io/netty/handler/ssl/util/SelfSignedCertificate.java
+%pom_remove_dep -r com.fasterxml:aalto-xml
+%pom_disable_module codec-xml
+%pom_remove_dep :netty-codec-xml all
+%pom_remove_dep -r com.github.jponge:lzma-java
+rm codec/src/*/java/io/netty/handler/codec/compression/Lzma*.java
+%pom_remove_dep -r com.ning:compress-lzf
+rm codec/src/*/java/io/netty/handler/codec/compression/Lzf*.java
+%pom_remove_dep -r net.jpountz.lz4:lz4
+rm codec/src/*/java/io/netty/handler/codec/compression/Lz4*.java
+
+%endif # jp_minimal
 
 sed -i 's|taskdef|taskdef classpathref="maven.plugin.classpath"|' all/pom.xml
 
 %pom_xpath_inject "pom:plugins/pom:plugin[pom:artifactId = 'maven-antrun-plugin']" '<dependencies><dependency><groupId>ant-contrib</groupId><artifactId>ant-contrib</artifactId><version>1.0b3</version></dependency></dependencies>' all/pom.xml
+%pom_xpath_inject "pom:execution[pom:id = 'build-native-lib']/pom:configuration" '<verbose>true</verbose>' transport-native-epoll/pom.xml
 
-# Java is exempt from multilb - disable 32-bit library on 64-bit
-# architectures and vice versa.
-%pom_xpath_remove "pom:execution[pom:id='build-linux32']" transport-native-epoll
-sed -i "s/linux64/linux%{__isa_bits}/" transport-native-epoll/pom.xml
-sed -i "s/x86_64/%{_arch}/" transport-native-epoll/pom.xml
+# Upstream has jctools bundled.
+%pom_xpath_remove "pom:build/pom:plugins/pom:plugin[pom:artifactId = 'maven-bundle-plugin']/pom:executions/pom:execution[pom:id = 'generate-manifest']/pom:configuration/pom:instructions/pom:Import-Package" common/pom.xml
+
+# Tell xmvn to install attached artifact, which it does not
+# do by default. In this case install all attached artifacts with
+# the linux classifier.
+%mvn_package ":::linux*:"
 
 %build
+export CFLAGS="$RPM_OPT_FLAGS" LDFLAGS="$RPM_LD_FLAGS"
 %mvn_build -f
 
 %install
@@ -110,6 +189,52 @@ sed -i "s/x86_64/%{_arch}/" transport-native-epoll/pom.xml
 %doc LICENSE.txt NOTICE.txt
 
 %changelog
+* Mon Aug 14 2017 Michael Simacek <msimacek@redhat.com> - 4.1.13-1
+- Update to upstream version 4.1.13
+
+* Thu Aug 03 2017 Fedora Release Engineering <releng@fedoraproject.org> - 4.0.42-7
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_27_Binutils_Mass_Rebuild
+
+* Wed Jul 26 2017 Fedora Release Engineering <releng@fedoraproject.org> - 4.0.42-6
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_27_Mass_Rebuild
+
+* Wed Mar 29 2017 Michael Simacek <msimacek@redhat.com> - 4.0.42-5
+- Keep Import-Package default value
+
+* Thu Mar 16 2017 Michael Simacek <msimacek@redhat.com> - 4.0.42-4
+- Remove maven-javadoc-plugin from POM
+
+* Wed Mar 15 2017 Michael Simacek <msimacek@redhat.com> - 4.0.42-3
+- Add jp_minimal conditional
+
+* Mon Feb 06 2017 Michael Simacek <msimacek@redhat.com> - 4.0.42-2
+- Remove useless plugins
+
+* Thu Oct 20 2016 Severin Gehwolf <sgehwolf@redhat.com> - 4.0.42-1
+- Remove old netty4 provides/obsoletes.
+
+* Thu Oct 20 2016 Severin Gehwolf <sgehwolf@redhat.com> - 4.0.42-1
+- Update to upstream 4.0.42 release.
+- Resolves RHBZ#1380921
+
+* Thu Feb 04 2016 Fedora Release Engineering <releng@fedoraproject.org> - 4.0.28-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_24_Mass_Rebuild
+
+* Wed Jun 17 2015 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 4.0.28-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_23_Mass_Rebuild
+
+* Wed May 20 2015 Severin Gehwolf <sgehwolf@redhat.com> - 4.0.28-1
+- Update to upstream 4.0.28 release.
+- Fixes CVE-2015-2156 (HttpOnly cookie bypass).
+- Resolves RHBZ#1111502
+
+* Wed May 20 2015 Severin Gehwolf <sgehwolf@redhat.com> - 4.0.27-1
+- Update to upstream 4.0.27 release.
+
+* Wed Apr 01 2015 Severin Gehwolf <sgehwolf@redhat.com> - 4.0.19-3
+- Drop mvn(org.easymock:easymockclassextension) BR.
+  Resolves: RHBZ#1207991
+
 * Sun Aug 17 2014 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 4.0.19-2
 - Rebuilt for https://fedoraproject.org/wiki/Fedora_21_22_Mass_Rebuild
 
@@ -192,7 +317,7 @@ sed -i "s/x86_64/%{_arch}/" transport-native-epoll/pom.xml
 * Thu Aug 23 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.5-1
 - Update to upstream version 3.5.5
 
-* Thu Aug 15 2012 Tomas Rohovsky <trohovsk@redhat.com> - 3.5.4-1
+* Wed Aug 15 2012 Tomas Rohovsky <trohovsk@redhat.com> - 3.5.4-1
 - Update to upstream version 3.5.4
 
 * Tue Jul 24 2012 Mikolaj Izdebski <mizdebsk@redhat.com> - 3.5.3-1
@@ -235,3 +360,4 @@ sed -i "s/x86_64/%{_arch}/" transport-native-epoll/pom.xml
 
 * Thu Jan 13 2011 Stanislav Ochotnicky <sochotnicky@redhat.com> - 3.2.3-1
 - Initial version of the package
+
