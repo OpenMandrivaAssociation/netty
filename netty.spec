@@ -9,7 +9,7 @@
 
 Name:           netty
 Version:        4.1.13
-Release:        1.1
+Release:        1.2
 Summary:        An asynchronous event-driven network application framework and tools for Java
 Group:          Development/Java
 License:        ASL 2.0
